@@ -24,25 +24,48 @@ fn get_host_user() -> String {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "atuin-tui", about = "Standalone TUI history inspector")]
+#[command(
+    name = "atuin-tui",
+    about = "Standalone TUI history inspector",
+    long_about = "Interactive TUI for browsing shell history piped in over stdin.\n\
+        \n\
+        Reads TSV records from stdin, one per line, with columns:\n\
+        \n\
+        \x20 timestamp_ns<TAB>duration_ns<TAB>exit<TAB>command<TAB>cwd<TAB>session<TAB>hostname\n\
+        \n\
+        Example — browse atuin history:\n\
+        \n\
+        \x20 atuin history list --format \"{time}\\t{duration}\\t{exit}\\t{command}\\t{cwd}\\t{session}\\t{host}\" \\\n\
+        \x20   | atuin-tui\n\
+        \n\
+        Example — one-shot from a plain text log (timestamp in nanoseconds):\n\
+        \n\
+        \x20 printf '%s\\t-1\\t0\\techo hello\\t/tmp\\tsession1\\tlocalhost:user\\n' \"$(date +%s%N)\" \\\n\
+        \x20   | atuin-tui\n\
+        \n\
+        The selected command is printed to stdout on exit, making it easy to\n\
+        capture and execute:\n\
+        \n\
+        \x20 cmd=$(atuin history list ... | atuin-tui) && eval \"$cmd\""
+)]
 struct Args {
-    /// Number of history entries to load on startup
+    /// Number of entries to read before displaying the TUI
     #[arg(long, default_value = "200")]
     page_size: usize,
 
-    /// Session ID
+    /// Session ID [env: ATUIN_SESSION]
     #[arg(long)]
     session: Option<String>,
 
-    /// Hostname
+    /// Hostname in host:user format (used by host/session filter modes)
     #[arg(long)]
     hostname: Option<String>,
 
-    /// Working directory
+    /// Working directory (used by directory/workspace filter modes)
     #[arg(long)]
     cwd: Option<String>,
 
-    /// Git root directory (auto-detected from --cwd if omitted)
+    /// Git root directory (used by workspace filter mode; auto-detected from --cwd if omitted)
     #[arg(long)]
     git_root: Option<PathBuf>,
 }
