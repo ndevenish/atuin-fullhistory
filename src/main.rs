@@ -12,7 +12,7 @@ mod sort;
 mod tui;
 mod types;
 
-use input::TsvReader;
+use input::{FullHistoryReader, TsvReader};
 use memory_db::MemoryDatabase;
 
 fn get_host_user() -> String {
@@ -23,33 +23,44 @@ fn get_host_user() -> String {
     format!("{host}:{user}")
 }
 
+fn default_history_file() -> Option<PathBuf> {
+    let path = directories::UserDirs::new()?.home_dir().join(".fullhistory");
+    path.exists().then_some(path)
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "atuin-tui",
     about = "Standalone TUI history inspector",
-    long_about = "Interactive TUI for browsing shell history piped in over stdin.\n\
+    long_about = "Interactive TUI for browsing shell history.\n\
         \n\
-        Reads TSV records from stdin, one per line, with columns:\n\
+        By default reads ~/.fullhistory (use --file to override), or falls\n\
+        back to reading TSV records from stdin if no file is found.\n\
+        \n\
+        ~/.fullhistory format (one command per line):\n\
+        \n\
+        \x20 hostname:\"cwd\" pid YYYY-MM-DDTHH:MM:SS+ZZZZ command\n\
+        \x20 ##EXIT## hostname pid=N $?=N t_ms=N\n\
+        \n\
+        Stdin TSV format (7 tab-separated columns):\n\
         \n\
         \x20 timestamp_ns<TAB>duration_ns<TAB>exit<TAB>command<TAB>cwd<TAB>session<TAB>hostname\n\
         \n\
-        Example — browse atuin history:\n\
+        Example — browse atuin history via stdin:\n\
         \n\
         \x20 atuin history list --format \"{time}\\t{duration}\\t{exit}\\t{command}\\t{cwd}\\t{session}\\t{host}\" \\\n\
         \x20   | atuin-tui\n\
         \n\
-        Example — one-shot from a plain text log (timestamp in nanoseconds):\n\
+        The selected command is printed to stdout on exit:\n\
         \n\
-        \x20 printf '%s\\t-1\\t0\\techo hello\\t/tmp\\tsession1\\tlocalhost:user\\n' \"$(date +%s%N)\" \\\n\
-        \x20   | atuin-tui\n\
-        \n\
-        The selected command is printed to stdout on exit, making it easy to\n\
-        capture and execute:\n\
-        \n\
-        \x20 cmd=$(atuin history list ... | atuin-tui) && eval \"$cmd\""
+        \x20 cmd=$(atuin-tui) && eval \"$cmd\""
 )]
 struct Args {
-    /// Number of entries to read before displaying the TUI
+    /// History file to read [default: ~/.fullhistory]
+    #[arg(long)]
+    file: Option<PathBuf>,
+
+    /// Number of recent entries to display before loading the rest
     #[arg(long, default_value = "200")]
     page_size: usize,
 
@@ -96,28 +107,51 @@ async fn main() -> Result<()> {
 
     let settings = Settings::new().unwrap_or_default();
     let theme_name = settings.theme.name.clone();
-    let mut theme_manager =
-        ThemeManager::new(settings.theme.debug, None);
+    let mut theme_manager = ThemeManager::new(settings.theme.debug, None);
     let app_theme = theme_manager.load_theme(theme_name.as_str(), settings.theme.max_depth);
 
-    let mut reader = TsvReader::new(tokio::io::stdin());
-    let first_page = reader.read_batch(args.page_size).await;
+    let file_path = args.file.or_else(default_history_file);
 
-    let (db, db_handle) = MemoryDatabase::new(first_page);
+    let (db, rx) = if let Some(path) = file_path {
+        // File mode: read all entries, newest first, show tail immediately.
+        let mut all = FullHistoryReader::new(path).read_all().await;
+        all.reverse(); // newest first
 
-    let (tx, rx) = tokio::sync::watch::channel(());
+        let split = args.page_size.min(all.len());
+        let rest = all.split_off(split);
+        let first_page = all;
 
-    // Background loader: reads remaining entries and notifies TUI
-    tokio::spawn(async move {
-        loop {
-            let batch = reader.read_batch(100).await;
-            if batch.is_empty() {
-                break;
+        let (db, db_handle) = MemoryDatabase::new(first_page);
+        let (tx, rx) = tokio::sync::watch::channel(());
+
+        tokio::spawn(async move {
+            for chunk in rest.chunks(200) {
+                db_handle.append(chunk.to_vec()).await;
+                let _ = tx.send(());
             }
-            db_handle.append(batch).await;
-            let _ = tx.send(());
-        }
-    });
+        });
+
+        (db, rx)
+    } else {
+        // Stdin TSV mode: stream entries as they arrive.
+        let mut reader = TsvReader::new(tokio::io::stdin());
+        let first_page = reader.read_batch(args.page_size).await;
+        let (db, db_handle) = MemoryDatabase::new(first_page);
+        let (tx, rx) = tokio::sync::watch::channel(());
+
+        tokio::spawn(async move {
+            loop {
+                let batch = reader.read_batch(100).await;
+                if batch.is_empty() {
+                    break;
+                }
+                db_handle.append(batch).await;
+                let _ = tx.send(());
+            }
+        });
+
+        (db, rx)
+    };
 
     let result =
         tui::interactive::history(&[], &settings, db, &app_theme, rx, context).await?;
