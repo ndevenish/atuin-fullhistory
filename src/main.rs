@@ -15,13 +15,6 @@ mod types;
 use input::FullHistoryReader;
 use memory_db::MemoryDatabase;
 
-fn get_host_user() -> String {
-    let host = whoami::hostname()
-        .unwrap_or_else(|_| "unknown-host".to_string());
-    let user = whoami::username()
-        .unwrap_or_else(|_| "unknown-user".to_string());
-    format!("{host}:{user}")
-}
 
 fn default_history_file() -> Option<PathBuf> {
     let path = directories::UserDirs::new()?.home_dir().join(".fullhistory");
@@ -59,7 +52,7 @@ struct Args {
     #[arg(long)]
     session: Option<String>,
 
-    /// Hostname in host:user format (used by host/session filter modes)
+    /// Hostname to match against history entries (used by host/session filter modes)
     #[arg(long)]
     hostname: Option<String>,
 
@@ -80,7 +73,9 @@ async fn main() -> Result<()> {
         std::env::var("ATUIN_SESSION")
             .unwrap_or_else(|_| uuid::Uuid::new_v4().simple().to_string())
     });
-    let hostname = args.hostname.unwrap_or_else(get_host_user);
+    let hostname = args.hostname.unwrap_or_else(|| {
+        whoami::hostname().unwrap_or_else(|_| "unknown-host".to_string())
+    });
     let cwd = args.cwd.unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
