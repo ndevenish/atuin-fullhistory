@@ -1816,6 +1816,7 @@ pub async fn history(
             _ = &mut update_task => {}
             _ = entries_rx.changed() => {
                 results = app.query_results(&mut db, settings.smart_sort).await?;
+                app.history_count = db.history_count(false).await?;
             }
         }
 
