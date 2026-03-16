@@ -8,8 +8,7 @@ use uuid::Uuid;
 
 use crate::local_db::Db;
 use crate::types::{
-    Context, FilterMode, History, HistoryId, HistoryStats, OptFilters, QueryToken, QueryTokenizer,
-    SearchMode,
+    Context, FilterMode, History, HistoryStats, OptFilters, QueryToken, QueryTokenizer, SearchMode,
 };
 
 #[derive(Clone)]

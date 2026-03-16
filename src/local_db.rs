@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use eyre::Result;
 
-use crate::types::{Context, FilterMode, History, HistoryId, HistoryStats, OptFilters, SearchMode};
+use crate::types::{Context, FilterMode, History, HistoryStats, OptFilters, SearchMode};
 
 #[async_trait]
 pub trait Db: Send + Sync + 'static {
@@ -33,5 +33,6 @@ pub trait Db: Send + Sync + 'static {
 
     async fn delete(&self, h: History) -> Result<()>;
 
+    #[allow(dead_code)]
     fn clone_boxed(&self) -> Box<dyn Db + 'static>;
 }

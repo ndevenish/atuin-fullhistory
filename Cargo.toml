@@ -7,6 +7,9 @@ edition = "2024"
 name = "atuin-tui"
 path = "src/main.rs"
 
+[features]
+clipboard = []
+
 [dependencies]
 async-trait   = "0.1"
 clap          = { version = "4", features = ["derive"] }

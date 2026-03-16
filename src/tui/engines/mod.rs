@@ -8,7 +8,7 @@ use super::cursor::Cursor;
 pub mod db;
 pub mod skim;
 
-pub fn engine(search_mode: SearchMode, settings: &Settings) -> Box<dyn SearchEngine> {
+pub fn engine(search_mode: SearchMode, _settings: &Settings) -> Box<dyn SearchEngine> {
     match search_mode {
         SearchMode::Skim => Box::new(skim::Search::new()) as Box<_>,
         SearchMode::DaemonFuzzy => {
