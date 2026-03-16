@@ -69,17 +69,27 @@ impl FullHistoryReader {
 
     /// Read the head of the file (bytes 0..end_offset) and return entries in
     /// chronological order for background appending to the DB.
+    ///
+    /// Runs entirely inside `spawn_blocking` using synchronous `std::fs` I/O so
+    /// that slow NFS reads and the subsequent `parse_fullhistory` CPU work are
+    /// isolated on one OS thread and cannot starve the async executor (which the
+    /// TUI's `spawn_blocking(|| event::poll(...))` also depends on).
     pub async fn read_head(&self, end_offset: u64) -> Vec<History> {
         if end_offset == 0 {
             return vec![];
         }
-        let file = match tokio::fs::File::open(&self.path).await {
-            Ok(f) => f,
-            Err(_) => return vec![],
-        };
-        let mut content = String::new();
-        let _ = file.take(end_offset).read_to_string(&mut content).await;
-        parse_fullhistory(&content)
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let Ok(file) = std::fs::File::open(&path) else {
+                return vec![];
+            };
+            let mut content = String::new();
+            let _ = file.take(end_offset).read_to_string(&mut content);
+            parse_fullhistory(&content)
+        })
+        .await
+        .unwrap_or_default()
     }
 }
 
