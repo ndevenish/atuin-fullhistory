@@ -37,19 +37,14 @@ fn default_history_file() -> Option<PathBuf> {
         Reads ~/.fullhistory by default; use --file to specify another path.\n\
         Exits with an error if no file is found.\n\
         \n\
+        The last ~128 KB of the file is read first (NFS-block-aligned) so the\n\
+        UI appears immediately with recent history. Older entries load in the\n\
+        background.\n\
+        \n\
         ~/.fullhistory format (one command per line):\n\
         \n\
         \x20 hostname:\"cwd\" pid YYYY-MM-DDTHH:MM:SS+ZZZZ command\n\
         \x20 ##EXIT## hostname pid=N $?=N t_ms=N\n\
-        \n\
-        Stdin TSV format (7 tab-separated columns):\n\
-        \n\
-        \x20 timestamp_ns<TAB>duration_ns<TAB>exit<TAB>command<TAB>cwd<TAB>session<TAB>hostname\n\
-        \n\
-        Example — browse atuin history via stdin:\n\
-        \n\
-        \x20 atuin history list --format \"{time}\\t{duration}\\t{exit}\\t{command}\\t{cwd}\\t{session}\\t{host}\" \\\n\
-        \x20   | atuin-tui\n\
         \n\
         The selected command is printed to stdout on exit:\n\
         \n\
@@ -59,10 +54,6 @@ struct Args {
     /// History file to read [default: ~/.fullhistory]
     #[arg(long)]
     file: Option<PathBuf>,
-
-    /// Number of recent entries to display before loading the rest
-    #[arg(long, default_value = "200")]
-    page_size: usize,
 
     /// Session ID [env: ATUIN_SESSION]
     #[arg(long)]
@@ -115,20 +106,20 @@ async fn main() -> Result<()> {
         .or_else(default_history_file)
         .ok_or_else(|| eyre::eyre!("no history file found (tried ~/.fullhistory); use --file to specify one"))?;
 
-    let mut all = FullHistoryReader::new(path).read_all().await;
-    all.reverse(); // newest first
-
-    let split = args.page_size.min(all.len());
-    let rest = all.split_off(split);
-    let first_page = all;
+    let reader = FullHistoryReader::new(path);
+    let (first_page, head_end) = reader.read_tail().await;
 
     let (db, db_handle) = MemoryDatabase::new(first_page);
     let (tx, rx) = tokio::sync::watch::channel(());
 
+    // Load the older head portion in the background; the TUI is already showing.
     tokio::spawn(async move {
-        for chunk in rest.chunks(200) {
-            db_handle.append(chunk.to_vec()).await;
-            let _ = tx.send(());
+        if let Some(end) = head_end {
+            let head = reader.read_head(end).await;
+            for chunk in head.chunks(200) {
+                db_handle.append(chunk.to_vec()).await;
+                let _ = tx.send(());
+            }
         }
     });
 

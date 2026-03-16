@@ -1,10 +1,17 @@
 use std::collections::HashMap;
+use std::io::SeekFrom;
 use std::path::PathBuf;
 
 use time::OffsetDateTime;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use uuid::Uuid;
 
 use crate::types::History;
+
+/// Initial read window. Aligned down to NFS_ALIGN before seeking.
+const TAIL_BYTES: u64 = 128 * 1024;
+/// NFS block alignment (typical rsize/wsize is a multiple of this).
+const NFS_ALIGN: u64 = 4096;
 
 pub struct FullHistoryReader {
     path: PathBuf,
@@ -15,12 +22,63 @@ impl FullHistoryReader {
         Self { path }
     }
 
-    /// Read and parse the entire file, returning entries in chronological order.
-    pub async fn read_all(&self) -> Vec<History> {
-        let content = match tokio::fs::read_to_string(&self.path).await {
-            Ok(c) => c,
+    /// Read the tail of the file (~TAIL_BYTES, NFS-block-aligned) and return
+    /// entries newest-first for immediate display.
+    ///
+    /// Returns the byte offset at which the tail region starts (i.e. the end
+    /// of the head region), or `None` if the whole file was read.
+    pub async fn read_tail(&self) -> (Vec<History>, Option<u64>) {
+        let mut file = match tokio::fs::File::open(&self.path).await {
+            Ok(f) => f,
+            Err(_) => return (vec![], None),
+        };
+        let size = match file.metadata().await {
+            Ok(m) => m.len(),
+            Err(_) => return (vec![], None),
+        };
+
+        if size <= TAIL_BYTES {
+            // Small file: read everything.
+            let mut content = String::new();
+            let _ = file.read_to_string(&mut content).await;
+            let mut entries = parse_fullhistory(&content);
+            entries.reverse();
+            return (entries, None);
+        }
+
+        // Align seek offset down to an NFS block boundary.
+        let raw_start = size - TAIL_BYTES;
+        let start = (raw_start / NFS_ALIGN) * NFS_ALIGN;
+
+        if file.seek(SeekFrom::Start(start)).await.is_err() {
+            return (vec![], None);
+        }
+        let mut buf = Vec::with_capacity((size - start) as usize);
+        let _ = file.read_to_end(&mut buf).await;
+
+        // Skip forward to the first complete line (we may have landed mid-line).
+        let skip = buf.iter().position(|&b| b == b'\n').map_or(0, |i| i + 1);
+        let tail_offset = start + skip as u64;
+
+        let content = String::from_utf8_lossy(&buf[skip..]).into_owned();
+        let mut entries = parse_fullhistory(&content);
+        entries.reverse();
+
+        (entries, Some(tail_offset))
+    }
+
+    /// Read the head of the file (bytes 0..end_offset) and return entries in
+    /// chronological order for background appending to the DB.
+    pub async fn read_head(&self, end_offset: u64) -> Vec<History> {
+        if end_offset == 0 {
+            return vec![];
+        }
+        let file = match tokio::fs::File::open(&self.path).await {
+            Ok(f) => f,
             Err(_) => return vec![],
         };
+        let mut content = String::new();
+        let _ = file.take(end_offset).read_to_string(&mut content).await;
         parse_fullhistory(&content)
     }
 }
