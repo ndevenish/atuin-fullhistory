@@ -108,8 +108,6 @@ impl FullHistoryReader {
 fn parse_fullhistory(content: &str) -> Vec<History> {
     // pid → pending History (exit/duration not yet filled in)
     let mut pending: HashMap<u32, History> = HashMap::new();
-    // pid → stable session UUID (so all commands from same shell share one)
-    let mut sessions: HashMap<u32, String> = HashMap::new();
     let mut results: Vec<History> = Vec::new();
 
     for line in content.lines() {
@@ -119,7 +117,7 @@ fn parse_fullhistory(content: &str) -> Vec<History> {
                 h.duration = duration_ns;
                 results.push(h);
             }
-        } else if let Some((pid, h)) = parse_command_line(line, &mut sessions) {
+        } else if let Some((pid, h)) = parse_command_line(line) {
             // Flush any previous command from this pid that never got an EXIT
             if let Some(old) = pending.remove(&pid) {
                 results.push(old);
@@ -138,31 +136,27 @@ fn parse_fullhistory(content: &str) -> Vec<History> {
     results
 }
 
-/// Parse a command line: `hostname:"cwd" pid timestamp command`
+/// Parse a command line: `hostname[:"cwd"] pid timestamp command`
 /// Returns `(pid, History)` on success.
-fn parse_command_line(
-    line: &str,
-    sessions: &mut HashMap<u32, String>,
-) -> Option<(u32, History)> {
-    // hostname ends at first ':'
-    let colon = line.find(':')?;
-    let hostname = line[..colon].to_string();
-    // hostname must look like a hostname (no spaces)
-    if hostname.contains(' ') {
+fn parse_command_line(line: &str) -> Option<(u32, History)> {
+    // hostname: [a-zA-Z0-9.-]+
+    let hostname_end = line
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-')?;
+    let hostname = &line[..hostname_end];
+    if hostname.is_empty() {
         return None;
     }
-    let rest = &line[colon + 1..];
+    let rest = &line[hostname_end..];
 
-    // cwd is quoted with "…" or unquoted (to first space)
-    let (cwd, rest) = if rest.starts_with('"') {
-        let close = rest[1..].find('"')? + 1;
-        (rest[1..close].to_string(), rest[close + 1..].trim_start())
+    // optional :"cwd" (cwd is always double-quoted when present)
+    let (cwd, rest) = if rest.starts_with(":\"") {
+        let close = rest[2..].find('"')? + 2;
+        (rest[2..close].to_string(), rest[close + 1..].trim_start())
     } else {
-        let sp = rest.find(' ')?;
-        (rest[..sp].to_string(), rest[sp + 1..].trim_start())
+        (String::new(), rest.trim_start())
     };
 
-    // pid
+    // pid (used directly as session, matching original importer behaviour)
     let sp = rest.find(' ')?;
     let pid: u32 = rest[..sp].parse().ok()?;
     let rest = &rest[sp + 1..];
@@ -170,18 +164,12 @@ fn parse_command_line(
     // timestamp
     let sp = rest.find(' ')?;
     let ts_str = &rest[..sp];
-    let command = rest[sp + 1..].to_string();
+    let command = rest[sp + 1..].trim().to_string();
     if command.is_empty() {
         return None;
     }
 
     let timestamp = parse_timestamp(ts_str)?;
-
-    let session = sessions
-        .entry(pid)
-        .or_insert_with(|| Uuid::new_v4().simple().to_string())
-        .clone();
-
     let id = Uuid::new_v4().simple().to_string();
 
     Some((
@@ -193,8 +181,8 @@ fn parse_command_line(
             exit: -1,
             command,
             cwd,
-            session,
-            hostname,
+            session: pid.to_string(),
+            hostname: hostname.to_string(),
             author: String::new(),
             intent: None,
             deleted_at: None,
@@ -227,27 +215,6 @@ fn parse_exit_line(line: &str) -> Option<(u32, i64, i64)> {
     Some((pid, exit_code, duration_ms * 1_000_000))
 }
 
-/// Parse timestamps in `YYYY-MM-DDTHH:MM:SS+HHMM` or `+HH:MM` offset format.
 fn parse_timestamp(s: &str) -> Option<OffsetDateTime> {
-    use time::format_description;
-
-    // Try without colon in offset (+0000)
-    if let Ok(fmt) = format_description::parse(
-        "[year]-[month]-[day]T[hour]:[minute]:[second][offset_hour sign:mandatory][offset_minute]",
-    ) {
-        if let Ok(dt) = OffsetDateTime::parse(s, &fmt) {
-            return Some(dt);
-        }
-    }
-
-    // Try with colon in offset (+00:00)
-    if let Ok(fmt) = format_description::parse(
-        "[year]-[month]-[day]T[hour]:[minute]:[second][offset_hour sign:mandatory]:[offset_minute]",
-    ) {
-        if let Ok(dt) = OffsetDateTime::parse(s, &fmt) {
-            return Some(dt);
-        }
-    }
-
-    None
+    OffsetDateTime::parse(s, &time::format_description::well_known::Iso8601::DEFAULT).ok()
 }
