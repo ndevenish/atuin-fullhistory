@@ -111,6 +111,12 @@ async fn main() -> Result<()> {
 
     let (db, db_handle) = MemoryDatabase::new(first_page);
     let (tx, rx) = tokio::sync::watch::channel(());
+    // Keep a sender alive in this scope so the channel is never closed while
+    // the TUI is running.  When the background task finishes and drops its
+    // clone of `tx`, `entries_rx.changed()` would otherwise start returning
+    // Err immediately on every call, causing the TUI event-loop to spin and
+    // never reach the event::poll arm.
+    let _tx_open = tx.clone();
 
     // Load the older head portion in the background; the TUI is already showing.
     tokio::spawn(async move {
