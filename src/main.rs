@@ -12,7 +12,7 @@ mod sort;
 mod tui;
 mod types;
 
-use input::{FullHistoryReader, TsvReader};
+use input::FullHistoryReader;
 use memory_db::MemoryDatabase;
 
 fn get_host_user() -> String {
@@ -34,8 +34,8 @@ fn default_history_file() -> Option<PathBuf> {
     about = "Standalone TUI history inspector",
     long_about = "Interactive TUI for browsing shell history.\n\
         \n\
-        By default reads ~/.fullhistory (use --file to override), or falls\n\
-        back to reading TSV records from stdin if no file is found.\n\
+        Reads ~/.fullhistory by default; use --file to specify another path.\n\
+        Exits with an error if no file is found.\n\
         \n\
         ~/.fullhistory format (one command per line):\n\
         \n\
@@ -110,48 +110,27 @@ async fn main() -> Result<()> {
     let mut theme_manager = ThemeManager::new(settings.theme.debug, None);
     let app_theme = theme_manager.load_theme(theme_name.as_str(), settings.theme.max_depth);
 
-    let file_path = args.file.or_else(default_history_file);
+    let path = args
+        .file
+        .or_else(default_history_file)
+        .ok_or_else(|| eyre::eyre!("no history file found (tried ~/.fullhistory); use --file to specify one"))?;
 
-    let (db, rx) = if let Some(path) = file_path {
-        // File mode: read all entries, newest first, show tail immediately.
-        let mut all = FullHistoryReader::new(path).read_all().await;
-        all.reverse(); // newest first
+    let mut all = FullHistoryReader::new(path).read_all().await;
+    all.reverse(); // newest first
 
-        let split = args.page_size.min(all.len());
-        let rest = all.split_off(split);
-        let first_page = all;
+    let split = args.page_size.min(all.len());
+    let rest = all.split_off(split);
+    let first_page = all;
 
-        let (db, db_handle) = MemoryDatabase::new(first_page);
-        let (tx, rx) = tokio::sync::watch::channel(());
+    let (db, db_handle) = MemoryDatabase::new(first_page);
+    let (tx, rx) = tokio::sync::watch::channel(());
 
-        tokio::spawn(async move {
-            for chunk in rest.chunks(200) {
-                db_handle.append(chunk.to_vec()).await;
-                let _ = tx.send(());
-            }
-        });
-
-        (db, rx)
-    } else {
-        // Stdin TSV mode: stream entries as they arrive.
-        let mut reader = TsvReader::new(tokio::io::stdin());
-        let first_page = reader.read_batch(args.page_size).await;
-        let (db, db_handle) = MemoryDatabase::new(first_page);
-        let (tx, rx) = tokio::sync::watch::channel(());
-
-        tokio::spawn(async move {
-            loop {
-                let batch = reader.read_batch(100).await;
-                if batch.is_empty() {
-                    break;
-                }
-                db_handle.append(batch).await;
-                let _ = tx.send(());
-            }
-        });
-
-        (db, rx)
-    };
+    tokio::spawn(async move {
+        for chunk in rest.chunks(200) {
+            db_handle.append(chunk.to_vec()).await;
+            let _ = tx.send(());
+        }
+    });
 
     let result =
         tui::interactive::history(&[], &settings, db, &app_theme, rx, context).await?;
