@@ -104,9 +104,14 @@ fn parse_fullhistory(content: &str) -> Vec<History> {
     // pid → pending History (exit/duration not yet filled in)
     let mut pending: HashMap<u32, History> = HashMap::new();
     let mut results: Vec<History> = Vec::new();
+    // Most recently opened pid, so continuation lines know where to attach.
+    let mut last_pid: Option<u32> = None;
 
     for line in content.lines() {
         if let Some((pid, exit_code, duration_ns)) = parse_exit_line(line) {
+            if last_pid == Some(pid) {
+                last_pid = None;
+            }
             if let Some(mut h) = pending.remove(&pid) {
                 h.exit = exit_code;
                 h.duration = duration_ns;
@@ -118,8 +123,14 @@ fn parse_fullhistory(content: &str) -> Vec<History> {
                 results.push(old);
             }
             pending.insert(pid, h);
+            last_pid = Some(pid);
+        } else if let Some(pid) = last_pid {
+            // Continuation line — append to the most recently opened command.
+            if let Some(h) = pending.get_mut(&pid) {
+                h.command.push('\n');
+                h.command.push_str(line);
+            }
         }
-        // Other lines (continuations, blank lines, noise) are skipped
     }
 
     // Flush commands that never received an EXIT record
