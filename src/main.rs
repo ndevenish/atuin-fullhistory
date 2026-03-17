@@ -41,7 +41,7 @@ fn default_history_file() -> Option<PathBuf> {
         \n\
         The selected command is printed to stdout on exit:\n\
         \n\
-        \x20 cmd=$(atuin-tui) && eval \"$cmd\""
+        \x20 cmd=$(atuin-fullhistory) && eval \"$cmd\""
 )]
 struct Args {
     /// History file to read [default: ~/.fullhistory]

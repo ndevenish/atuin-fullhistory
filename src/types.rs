@@ -1,5 +1,5 @@
 // Inlined types from atuin-client, atuin-common, and atuin-history.
-// This allows atuin-tui to build as a standalone crate without workspace deps.
+// This allows atuin-fullhistory to build as a standalone crate without workspace deps.
 #![allow(dead_code)]
 
 use std::{borrow::Cow, collections::HashMap, fmt, io::prelude::*, path::PathBuf, str::FromStr};

@@ -1086,7 +1086,7 @@ impl State {
     fn build_title(&self, theme: &Theme) -> Paragraph<'_> {
         let style: Style = Style::from_crossterm(theme.as_style(Meaning::Base));
         Paragraph::new(Text::from(Span::styled(
-            format!("atuin-tui v{}", env!("CARGO_PKG_VERSION")),
+            format!("atuin-fullhistory v{}", env!("CARGO_PKG_VERSION")),
             style.add_modifier(Modifier::BOLD),
         )))
         .alignment(Alignment::Left)

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`atuin-fullhistory` is a standalone TUI for browsing shell history from `~/.fullhistory`. It was refactored from the atuin-tui crate to build independently without any `atuin-*` workspace dependencies. Key types from atuin-client/atuin-common are inlined in `src/types.rs`.
+`atuin-fullhistory` is a standalone TUI for browsing shell history from `~/.fullhistory`. It was refactored from the atuin TUI to build independently without any `atuin-*` workspace dependencies. Key types from atuin-client/atuin-common are inlined in `src/types.rs`.
 
 ## Commands
 
