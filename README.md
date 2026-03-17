@@ -14,13 +14,11 @@ atuin-fullhistory
 atuin-fullhistory --file /path/to/history
 
 # Shell integration: insert selected command into the current line
-output=$(ATUIN_SHELL_ZSH=t ATUIN_LOG=error atuin-fullhistory 3>&1 1>&2 2>&3)
+output=$(ATUIN_LOG=error atuin-fullhistory)
 ```
 
-The selected command is written to stdout when stdout is not a terminal (direct
-`$()` capture), or to stderr otherwise. This matches the fd-swap pattern used by
-atuin's shell integration (`3>&1 1>&2 2>&3`), where the TUI renders on the
-reassigned stdout and the result is captured from stderr.
+The selected command is printed to stdout. When stdout is a pipe (command
+substitution), the TUI automatically renders via `/dev/tty` instead.
 
 ### CLI flags
 

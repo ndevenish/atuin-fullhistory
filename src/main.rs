@@ -1,4 +1,3 @@
-use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -127,15 +126,7 @@ async fn main() -> Result<()> {
     let result =
         tui::interactive::history(&[], &settings, db, &app_theme, rx, context).await?;
     if !result.is_empty() {
-        // Match atuin's fd-swap shell integration pattern (3>&1 1>&2 2>&3):
-        //   stdout not a terminal → direct capture via $(), use println
-        //   stderr not a terminal → it's the capture pipe after the swap, use eprintln
-        //   otherwise → stderr is a real terminal, use eprintln
-        if !std::io::stdout().is_terminal() {
-            println!("{result}");
-        } else {
-            eprintln!("{result}");
-        }
+        println!("{result}");
     }
 
     Ok(())
