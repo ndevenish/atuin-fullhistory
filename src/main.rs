@@ -65,6 +65,14 @@ enum Cmd {
     /// Print shell integration script
     Init {
         shell: Shell,
+
+        /// Disable the binding of CTRL-R to atuin-fullhistory
+        #[arg(long)]
+        disable_ctrl_r: bool,
+
+        /// Disable the binding of the Up Arrow key to atuin-fullhistory
+        #[arg(long)]
+        disable_up_arrow: bool,
     },
 }
 
@@ -80,9 +88,9 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Cmd::Init { shell } => {
+        Cmd::Init { shell, disable_ctrl_r, disable_up_arrow } => {
             match shell {
-                Shell::Zsh => print!("{}", ZSH_INIT),
+                Shell::Zsh => print!("{}", zsh_init(disable_ctrl_r, disable_up_arrow)),
                 Shell::Bash => print!("{}", BASH_INIT),
             }
         }
@@ -175,7 +183,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-const ZSH_INIT: &str = r#"_atuin_fh_search() {
+fn zsh_init(disable_ctrl_r: bool, disable_up_arrow: bool) -> String {
+    let mut out = String::from(
+        r#"_atuin_fh_search() {
     emulate -L zsh
     zle -I
 
@@ -183,7 +193,7 @@ const ZSH_INIT: &str = r#"_atuin_fh_search() {
     # TODO: not this
     local output
     # shellcheck disable=SC2048
-    output=$(ATUIN_SHELL_ZSH=t ATUIN_LOG=error ATUIN_QUERY=$BUFFER atuin-fullhistory $* 3>&1 1>&2 2>&3)
+    output=$(ATUIN_SHELL_ZSH=t ATUIN_LOG=error ATUIN_QUERY=$BUFFER atuin-fullhistory search -i $* 3>&1 1>&2 2>&3)
 
     zle reset-prompt
     # re-enable bracketed paste
@@ -202,11 +212,47 @@ const ZSH_INIT: &str = r#"_atuin_fh_search() {
     fi
 }
 
-zle -N atuin-fh-search _atuin_fh_search
+_atuin_fh_up_search() {
+    # Only trigger if the buffer is a single line
+    if [[ ! $BUFFER == *$'\n'* ]]; then
+        _atuin_fh_search --shell-up-key-binding "$@"
+    else
+        zle up-line
+    fi
+}
 
+zle -N atuin-fh-search _atuin_fh_search
+zle -N atuin-fh-up-search _atuin_fh_up_search
+"#,
+    );
+
+    if std::env::var("ATUIN_NOBIND").is_err() {
+        if !disable_ctrl_r {
+            out.push_str(
+                r#"
 bindkey -M emacs '^r' atuin-fh-search
+bindkey -M viins '^r' atuin-fh-search
 bindkey -M vicmd '/' atuin-fh-search
-"#;
+"#,
+            );
+        }
+        if !disable_up_arrow {
+            out.push_str(
+                r#"
+bindkey -M emacs '^[[A' atuin-fh-up-search
+bindkey -M vicmd '^[[A' atuin-fh-up-search
+bindkey -M viins '^[[A' atuin-fh-up-search
+bindkey -M emacs '^[OA' atuin-fh-up-search
+bindkey -M vicmd '^[OA' atuin-fh-up-search
+bindkey -M viins '^[OA' atuin-fh-up-search
+bindkey -M vicmd 'k' atuin-fh-up-search
+"#,
+            );
+        }
+    }
+
+    out
+}
 
 const BASH_INIT: &str = r#"# atuin-fullhistory bash integration - not yet implemented
 "#;
