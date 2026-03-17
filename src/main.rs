@@ -1,3 +1,4 @@
+use std::io::IsTerminal as _;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -160,7 +161,13 @@ async fn main() -> Result<()> {
             let result =
                 tui::interactive::history(&query, &settings, db, &app_theme, rx, context).await?;
             if !result.is_empty() {
-                println!("{result}");
+                if !std::io::stdout().is_terminal() {
+                    // stdout captured by command substitution (no fd-swap)
+                    println!("{result}");
+                } else {
+                    // fd-swap in effect: stderr is the pipe captured by $()
+                    eprintln!("{result}");
+                }
             }
         }
     }
