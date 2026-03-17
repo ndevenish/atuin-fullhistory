@@ -100,6 +100,15 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
 
+            let query = if query.is_empty() {
+                std::env::var("ATUIN_QUERY").map_or_else(
+                    |_| vec![],
+                    |q| q.split(' ').map(str::to_string).collect(),
+                )
+            } else {
+                query
+            };
+
             let session = session.unwrap_or_else(|| {
                 std::env::var("ATUIN_SESSION")
                     .unwrap_or_else(|_| uuid::Uuid::new_v4().simple().to_string())
