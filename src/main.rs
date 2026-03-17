@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand, ValueEnum};
 use eyre::Result;
 
 use crate::types::{Context, Settings, ThemeManager, in_git_repo};
@@ -22,112 +22,175 @@ fn default_history_file() -> Option<PathBuf> {
 }
 
 #[derive(Parser, Debug)]
-#[command(
-    name = "atuin-fullhistory",
-    about = "Standalone TUI history inspector",
-    long_about = "Interactive TUI for browsing shell history.\n\
-        \n\
-        Reads ~/.fullhistory by default; use --file to specify another path.\n\
-        Exits with an error if no file is found.\n\
-        \n\
-        The last ~128 KB of the file is read first (NFS-block-aligned) so the\n\
-        UI appears immediately with recent history. Older entries load in the\n\
-        background.\n\
-        \n\
-        ~/.fullhistory format (one command per line):\n\
-        \n\
-        \x20 hostname:\"cwd\" pid YYYY-MM-DDTHH:MM:SS+ZZZZ command\n\
-        \x20 ##EXIT## hostname pid=N $?=N t_ms=N\n\
-        \n\
-        The selected command is printed to stdout or stderr depending on context:\n\
-        \n\
-        \x20 cmd=$(atuin-fullhistory) && eval \"$cmd\""
-)]
+#[command(name = "atuin-fullhistory", about = "Standalone TUI history inspector")]
 struct Args {
-    /// History file to read [default: ~/.fullhistory]
-    #[arg(long)]
-    file: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Cmd,
+}
 
-    /// Session ID [env: ATUIN_SESSION]
-    #[arg(long)]
-    session: Option<String>,
+#[derive(Subcommand, Debug)]
+enum Cmd {
+    /// Search shell history
+    Search {
+        /// Open interactive TUI
+        #[arg(short, long)]
+        interactive: bool,
 
-    /// Hostname to match against history entries (used by host/session filter modes)
-    #[arg(long)]
-    hostname: Option<String>,
+        /// History file to read [default: ~/.fullhistory]
+        #[arg(long)]
+        file: Option<PathBuf>,
 
-    /// Working directory (used by directory/workspace filter modes)
-    #[arg(long)]
-    cwd: Option<String>,
+        /// Session ID [env: ATUIN_SESSION]
+        #[arg(long)]
+        session: Option<String>,
 
-    /// Git root directory (used by workspace filter mode; auto-detected from --cwd if omitted)
-    #[arg(long)]
-    git_root: Option<PathBuf>,
+        /// Hostname to match against history entries
+        #[arg(long)]
+        hostname: Option<String>,
+
+        /// Working directory (used by directory/workspace filter modes)
+        #[arg(long)]
+        cwd: Option<String>,
+
+        /// Git root directory (auto-detected from --cwd if omitted)
+        #[arg(long)]
+        git_root: Option<PathBuf>,
+
+        /// Search query
+        #[arg(allow_hyphen_values = true)]
+        query: Vec<String>,
+    },
+
+    /// Print shell integration script
+    Init {
+        shell: Shell,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum, Debug)]
+#[value(rename_all = "lower")]
+enum Shell {
+    Zsh,
+    Bash,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let session = args.session.unwrap_or_else(|| {
-        std::env::var("ATUIN_SESSION")
-            .unwrap_or_else(|_| uuid::Uuid::new_v4().simple().to_string())
-    });
-    let hostname = args.hostname.unwrap_or_else(|| {
-        whoami::hostname().unwrap_or_else(|_| "unknown-host".to_string())
-    });
-    let cwd = args.cwd.unwrap_or_else(|| {
-        std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| String::from("/"))
-    });
-    let git_root = args.git_root.or_else(|| in_git_repo(&cwd));
-
-    let context = Context {
-        session,
-        hostname,
-        cwd,
-        host_id: String::new(),
-        git_root,
-    };
-
-    let settings = Settings::new().unwrap_or_default();
-    let theme_name = settings.theme.name.clone();
-    let mut theme_manager = ThemeManager::new(settings.theme.debug, None);
-    let app_theme = theme_manager.load_theme(theme_name.as_str(), settings.theme.max_depth);
-
-    let path = args
-        .file
-        .or_else(default_history_file)
-        .ok_or_else(|| eyre::eyre!("no history file found (tried ~/.fullhistory); use --file to specify one"))?;
-
-    let reader = FullHistoryReader::new(path);
-    let (first_page, head_end) = reader.read_tail().await;
-
-    let (db, db_handle) = MemoryDatabase::new(first_page);
-    let (tx, rx) = tokio::sync::watch::channel(());
-    // Keep a sender alive in this scope so the channel is never closed while
-    // the TUI is running.  When the background task finishes and drops its
-    // clone of `tx`, `entries_rx.changed()` would otherwise start returning
-    // Err immediately on every call, causing the TUI event-loop to spin and
-    // never reach the event::poll arm.
-    let _tx_open = tx.clone();
-
-    // Load the older head portion in the background; the TUI is already showing.
-    tokio::spawn(async move {
-        if let Some(end) = head_end {
-            for block in reader.read_head(end).await {
-                db_handle.append(block).await;
-                let _ = tx.send(());
+    match args.command {
+        Cmd::Init { shell } => {
+            match shell {
+                Shell::Zsh => print!("{}", ZSH_INIT),
+                Shell::Bash => print!("{}", BASH_INIT),
             }
         }
-    });
 
-    let result =
-        tui::interactive::history(&[], &settings, db, &app_theme, rx, context).await?;
-    if !result.is_empty() {
-        println!("{result}");
+        Cmd::Search {
+            interactive,
+            file,
+            session,
+            hostname,
+            cwd,
+            git_root,
+            query,
+        } => {
+            if !interactive {
+                eprintln!("Non-interactive search is not yet implemented. Use -i for the TUI.");
+                return Ok(());
+            }
+
+            let session = session.unwrap_or_else(|| {
+                std::env::var("ATUIN_SESSION")
+                    .unwrap_or_else(|_| uuid::Uuid::new_v4().simple().to_string())
+            });
+            let hostname = hostname.unwrap_or_else(|| {
+                whoami::hostname().unwrap_or_else(|_| "unknown-host".to_string())
+            });
+            let cwd = cwd.unwrap_or_else(|| {
+                std::env::current_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| String::from("/"))
+            });
+            let git_root = git_root.or_else(|| in_git_repo(&cwd));
+
+            let context = Context {
+                session,
+                hostname,
+                cwd,
+                host_id: String::new(),
+                git_root,
+            };
+
+            let settings = Settings::new().unwrap_or_default();
+            let theme_name = settings.theme.name.clone();
+            let mut theme_manager = ThemeManager::new(settings.theme.debug, None);
+            let app_theme =
+                theme_manager.load_theme(theme_name.as_str(), settings.theme.max_depth);
+
+            let path = file
+                .or_else(default_history_file)
+                .ok_or_else(|| eyre::eyre!("no history file found (tried ~/.fullhistory); use --file to specify one"))?;
+
+            let reader = FullHistoryReader::new(path);
+            let (first_page, head_end) = reader.read_tail().await;
+
+            let (db, db_handle) = MemoryDatabase::new(first_page);
+            let (tx, rx) = tokio::sync::watch::channel(());
+            let _tx_open = tx.clone();
+
+            tokio::spawn(async move {
+                if let Some(end) = head_end {
+                    for block in reader.read_head(end).await {
+                        db_handle.append(block).await;
+                        let _ = tx.send(());
+                    }
+                }
+            });
+
+            let result =
+                tui::interactive::history(&query, &settings, db, &app_theme, rx, context).await?;
+            if !result.is_empty() {
+                println!("{result}");
+            }
+        }
     }
 
     Ok(())
 }
+
+const ZSH_INIT: &str = r#"_atuin_fh_search() {
+    emulate -L zsh
+    zle -I
+
+    # swap stderr and stdout, so that the tui stuff works
+    # TODO: not this
+    local output
+    # shellcheck disable=SC2048
+    output=$(ATUIN_SHELL_ZSH=t ATUIN_LOG=error ATUIN_QUERY=$BUFFER atuin-fullhistory $* 3>&1 1>&2 2>&3)
+
+    zle reset-prompt
+    # re-enable bracketed paste
+    # shellcheck disable=SC2154
+    echo -n ${zle_bracketed_paste[1]} >/dev/tty
+
+    if [[ -n $output ]]; then
+        RBUFFER=""
+        LBUFFER=$output
+
+        if [[ $LBUFFER == __atuin_accept__:* ]]
+        then
+            LBUFFER=${LBUFFER#__atuin_accept__:}
+            zle accept-line
+        fi
+    fi
+}
+
+zle -N atuin-fh-search _atuin_fh_search
+
+bindkey -M emacs '^r' atuin-fh-search
+bindkey -M vicmd '/' atuin-fh-search
+"#;
+
+const BASH_INIT: &str = r#"# atuin-fullhistory bash integration - not yet implemented
+"#;
