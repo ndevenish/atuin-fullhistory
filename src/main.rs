@@ -116,9 +116,8 @@ async fn main() -> Result<()> {
     // Load the older head portion in the background; the TUI is already showing.
     tokio::spawn(async move {
         if let Some(end) = head_end {
-            let head = reader.read_head(end).await;
-            for chunk in head.chunks(200) {
-                db_handle.append(chunk.to_vec()).await;
+            for block in reader.read_head(end).await {
+                db_handle.append(block).await;
                 let _ = tx.send(());
             }
         }

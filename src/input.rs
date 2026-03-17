@@ -12,6 +12,8 @@ use crate::types::History;
 const TAIL_BYTES: u64 = 128 * 1024;
 /// NFS block alignment (typical rsize/wsize is a multiple of this).
 const NFS_ALIGN: u64 = 4096;
+/// Block size for backwards head reading.
+const HEAD_BLOCK: u64 = 1024 * 1024;
 
 pub struct FullHistoryReader {
     path: PathBuf,
@@ -67,26 +69,82 @@ impl FullHistoryReader {
         (entries, Some(tail_offset))
     }
 
-    /// Read the head of the file (bytes 0..end_offset) and return entries in
-    /// chronological order for background appending to the DB.
+    /// Read the head of the file (bytes 0..end_offset) in reverse 1 MB blocks,
+    /// returning one parsed block per Vec entry (newest block first).
+    ///
+    /// Reading backwards means the UI sees entries just before the tail first,
+    /// i.e. the most recently used commands appear earliest in the background load.
+    ///
+    /// Lines that span a block boundary are reassembled via a byte-level carry
+    /// buffer. Commands whose ##EXIT## record lands in a different block than
+    /// their header will have exit=-1 / duration=-1; this affects at most one
+    /// entry per block boundary.
     ///
     /// Runs entirely inside `spawn_blocking` using synchronous `std::fs` I/O so
     /// that slow NFS reads and the subsequent `parse_fullhistory` CPU work are
-    /// isolated on one OS thread and cannot starve the async executor (which the
-    /// TUI's `spawn_blocking(|| event::poll(...))` also depends on).
-    pub async fn read_head(&self, end_offset: u64) -> Vec<History> {
+    /// isolated on one OS thread and cannot starve the async executor.
+    pub async fn read_head(&self, end_offset: u64) -> Vec<Vec<History>> {
         if end_offset == 0 {
             return vec![];
         }
         let path = self.path.clone();
         tokio::task::spawn_blocking(move || {
-            use std::io::Read;
-            let Ok(file) = std::fs::File::open(&path) else {
+            use std::io::{Read, Seek, SeekFrom};
+            let Ok(mut file) = std::fs::File::open(&path) else {
                 return vec![];
             };
-            let mut content = String::new();
-            let _ = file.take(end_offset).read_to_string(&mut content);
-            parse_fullhistory(&content)
+
+            let mut blocks: Vec<Vec<History>> = Vec::new();
+            let mut cursor = end_offset;
+            // Byte-level carry: the tail of a line that begins in the current
+            // block but whose newline terminator sits in the next newer block.
+            // It is appended to the end of the current block's content so the
+            // line is complete before parsing.
+            let mut carry: Vec<u8> = Vec::new();
+
+            while cursor > 0 {
+                let block_start = cursor.saturating_sub(HEAD_BLOCK);
+                let block_len = (cursor - block_start) as usize;
+
+                if file.seek(SeekFrom::Start(block_start)).is_err() {
+                    break;
+                }
+                let mut buf = vec![0u8; block_len];
+                if file.read_exact(&mut buf).is_err() {
+                    break;
+                }
+
+                // Append carry so the line straddling the boundary is complete.
+                buf.extend_from_slice(&carry);
+
+                // Everything before (and including) the first '\n' in buf is the
+                // tail end of a line whose head is in the next older block.
+                // Save it as the new carry and parse the rest.
+                let (new_carry, to_parse) = match buf.iter().position(|&b| b == b'\n') {
+                    Some(i) => (buf[..=i].to_vec(), &buf[i + 1..]),
+                    None => (buf.clone(), &buf[buf.len()..]), // whole block is one fragment
+                };
+
+                let content = String::from_utf8_lossy(to_parse);
+                let entries = parse_fullhistory(&content);
+                if !entries.is_empty() {
+                    blocks.push(entries);
+                }
+
+                carry = new_carry;
+                cursor = block_start;
+            }
+
+            // Parse the carry left after reaching the start of the file.
+            if !carry.is_empty() {
+                let content = String::from_utf8_lossy(&carry);
+                let entries = parse_fullhistory(&content);
+                if !entries.is_empty() {
+                    blocks.push(entries);
+                }
+            }
+
+            blocks
         })
         .await
         .unwrap_or_default()
