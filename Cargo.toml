@@ -7,6 +7,13 @@ edition = "2024"
 name = "atuin-fullhistory"
 path = "src/main.rs"
 
+[profile.release]
+opt-level = "z"      # optimize for size
+lto = true           # link-time optimization
+codegen-units = 1    # single codegen unit for better LTO
+strip = true         # strip symbols
+panic = "abort"      # smaller panic handler
+
 [features]
 clipboard = []
 
@@ -27,7 +34,7 @@ norm = { version = "0.1.1", features = ["fzf-v2"] }
 palette = { version = "0.7", features = ["serializing"] }
 ratatui = "0.30"
 regex = "1"
-semver = "1"
+semver = { version = "1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_regex = "1.1"
@@ -42,7 +49,14 @@ time = { version = "0.3", features = [
     "formatting",
     "parsing",
 ] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = [
+    "macros",       # #[tokio::main]
+    "rt-multi-thread", # multi-threaded runtime
+    "sync",         # watch, RwLock
+    "fs",           # fs::File
+    "io-util",      # AsyncReadExt, AsyncSeekExt
+    "rt",           # spawn, spawn_blocking, yield_now
+] }
 tracing = "0.1"
 unicode-width = "0.2"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }

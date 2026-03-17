@@ -23,7 +23,7 @@ fn default_history_file() -> Option<PathBuf> {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "atuin-tui",
+    name = "atuin-fullhistory",
     about = "Standalone TUI history inspector",
     long_about = "Interactive TUI for browsing shell history.\n\
         \n\
