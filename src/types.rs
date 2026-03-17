@@ -1960,6 +1960,16 @@ impl fmt::Display for Shell {
 
 impl Shell {
     pub fn from_env() -> Shell {
+        // Check shell-specific vars set by existing atuin integrations (e.g. ATUIN_SHELL_ZSH=t)
+        if std::env::var("ATUIN_SHELL_ZSH").is_ok() {
+            return Shell::Zsh;
+        }
+        if std::env::var("ATUIN_SHELL_BASH").is_ok() {
+            return Shell::Bash;
+        }
+        if std::env::var("ATUIN_SHELL_FISH").is_ok() {
+            return Shell::Fish;
+        }
         std::env::var("ATUIN_SHELL").map_or(Shell::Unknown, |shell| {
             Shell::from_string(shell.trim().to_lowercase())
         })
