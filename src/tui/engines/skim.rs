@@ -8,7 +8,7 @@ use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
 use time::OffsetDateTime;
 use tokio::task::yield_now;
-use tracing::{Level, instrument, warn};
+use log::warn;
 use uuid;
 
 use super::{SearchEngine, SearchState};
@@ -29,7 +29,6 @@ impl Search {
 
 #[async_trait]
 impl SearchEngine for Search {
-    #[instrument(skip_all, level = Level::TRACE, name = "skim_search", fields(query = %state.input.as_str()))]
     async fn full_query(
         &mut self,
         state: &SearchState,
@@ -41,7 +40,6 @@ impl SearchEngine for Search {
         Ok(fuzzy_search(&self.engine, state, &self.all_history).await)
     }
 
-    #[instrument(skip_all, level = Level::TRACE, name = "skim_highlight")]
     fn get_highlight_indices(&self, command: &str, search_input: &str) -> Vec<usize> {
         let (_, indices) = self
             .engine
@@ -51,13 +49,11 @@ impl SearchEngine for Search {
     }
 }
 
-#[instrument(skip_all, level = Level::TRACE, name = "load_all_history")]
 async fn load_all_history(db: &dyn Db) -> Vec<(History, i32)> {
     db.all_with_count().await.unwrap()
 }
 
 #[allow(clippy::too_many_lines)]
-#[instrument(skip_all, level = Level::TRACE, name = "fuzzy_match", fields(history_count = all_history.len()))]
 async fn fuzzy_search(
     engine: &SkimMatcherV2,
     state: &SearchState,

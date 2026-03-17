@@ -1536,10 +1536,26 @@ fn from_string(name: &str) -> std::result::Result<Color, String> {
                 b: vec[2],
             })
         }
-        '@' => {
-            serde_json::from_str::<Color>(format!("\"{}\"", &name[1..]).as_str())
-                .map_err(|_| format!("Could not convert color name {name} to Crossterm color"))
-        }
+        '@' => match &name[1..] {
+            "Reset" => Ok(Color::Reset),
+            "Black" => Ok(Color::Black),
+            "DarkGrey" | "DarkGray" => Ok(Color::DarkGrey),
+            "Red" => Ok(Color::Red),
+            "DarkRed" => Ok(Color::DarkRed),
+            "Green" => Ok(Color::Green),
+            "DarkGreen" => Ok(Color::DarkGreen),
+            "Yellow" => Ok(Color::Yellow),
+            "DarkYellow" => Ok(Color::DarkYellow),
+            "Blue" => Ok(Color::Blue),
+            "DarkBlue" => Ok(Color::DarkBlue),
+            "Magenta" => Ok(Color::Magenta),
+            "DarkMagenta" => Ok(Color::DarkMagenta),
+            "Cyan" => Ok(Color::Cyan),
+            "DarkCyan" => Ok(Color::DarkCyan),
+            "White" => Ok(Color::White),
+            "Grey" | "Gray" => Ok(Color::Grey),
+            _ => Err(format!("Could not convert color name {name} to Crossterm color")),
+        },
         _ => {
             let srgb = palette::named::from_str(name).ok_or("No such color in palette")?;
             Ok(Color::Rgb {

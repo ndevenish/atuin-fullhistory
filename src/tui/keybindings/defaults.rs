@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::types::{KeyBindingConfig, Settings};
-use tracing::warn;
+use log::warn;
 
 use super::actions::Action;
 use super::conditions::{ConditionAtom, ConditionExpr};

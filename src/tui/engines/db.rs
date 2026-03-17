@@ -1,18 +1,15 @@
-use super::{SearchEngine, SearchState};
 use async_trait::async_trait;
+use super::{SearchEngine, SearchState};
 use crate::local_db::Db;
 use crate::types::{History, OptFilters, QueryToken, QueryTokenizer, SearchMode};
 use eyre::Result;
 use norm::Metric;
 use norm::fzf::{FzfParser, FzfV2};
 use std::ops::Range;
-use tracing::{Level, instrument};
-
 pub struct Search(pub SearchMode);
 
 #[async_trait]
 impl SearchEngine for Search {
-    #[instrument(skip_all, level = Level::TRACE, name = "db_search", fields(mode = ?self.0, query = %state.input.as_str()))]
     async fn full_query(
         &mut self,
         state: &SearchState,
@@ -35,7 +32,6 @@ impl SearchEngine for Search {
         Ok(results)
     }
 
-    #[instrument(skip_all, level = Level::TRACE, name = "db_highlight")]
     fn get_highlight_indices(&self, command: &str, search_input: &str) -> Vec<usize> {
         if self.0 == SearchMode::Prefix {
             return vec![];
@@ -53,7 +49,6 @@ impl SearchEngine for Search {
     }
 }
 
-#[instrument(skip_all, level = Level::TRACE, name = "db_highlight_fulltext")]
 pub fn get_highlight_indices_fulltext(command: &str, search_input: &str) -> Vec<usize> {
     let mut ranges = vec![];
     let lower_command = command.to_ascii_lowercase();

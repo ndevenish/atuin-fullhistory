@@ -8,8 +8,6 @@ use std::io::Read as _;
 
 use crate::types::{Escapable as _, Shell};
 use eyre::Result;
-use futures_util::FutureExt;
-use semver::Version;
 use time::OffsetDateTime;
 use unicode_width::UnicodeWidthStr;
 
@@ -109,7 +107,6 @@ pub fn to_compactness(f: &Frame, settings: &Settings) -> Compactness {
 #[allow(clippy::struct_excessive_bools)]
 pub struct State {
     history_count: i64,
-    update_needed: Option<Version>,
     results_state: ListState,
     switched_search_mode: bool,
     search_mode: SearchMode,
@@ -1087,20 +1084,12 @@ impl State {
     }
 
     fn build_title(&self, theme: &Theme) -> Paragraph<'_> {
-        let title = if self.update_needed.is_some() {
-            let error_style: Style = Style::from_crossterm(theme.get_error());
-            Paragraph::new(Text::from(Span::styled(
-                format!("atuin-tui v{} - UPDATE", env!("CARGO_PKG_VERSION")),
-                error_style.add_modifier(Modifier::BOLD),
-            )))
-        } else {
-            let style: Style = Style::from_crossterm(theme.as_style(Meaning::Base));
-            Paragraph::new(Text::from(Span::styled(
-                format!("atuin-tui v{}", env!("CARGO_PKG_VERSION")),
-                style.add_modifier(Modifier::BOLD),
-            )))
-        };
-        title.alignment(Alignment::Left)
+        let style: Style = Style::from_crossterm(theme.as_style(Meaning::Base));
+        Paragraph::new(Text::from(Span::styled(
+            format!("atuin-tui v{}", env!("CARGO_PKG_VERSION")),
+            style.add_modifier(Modifier::BOLD),
+        )))
+        .alignment(Alignment::Left)
     }
 
     #[allow(clippy::unused_self)]
@@ -1674,7 +1663,7 @@ pub async fn history(
     // Put the cursor at the end of the query by default
     input.end();
 
-    let update_task = futures_util::future::pending::<()>().fuse();
+    let update_task = std::future::pending::<()>();
     tokio::pin!(update_task);
 
     let history_count = db.history_count(false).await?;
@@ -1692,7 +1681,6 @@ pub async fn history(
     let mut app = State {
         history_count,
         results_state: ListState::default(),
-        update_needed: None,
         switched_search_mode: false,
         search_mode,
         tab_index: 0,
@@ -2137,7 +2125,6 @@ mod tests {
         let settings = Settings::utc();
         let mut state = State {
             history_count: 0,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2192,7 +2179,6 @@ mod tests {
 
         let mut state = State {
             history_count: 1,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2311,7 +2297,6 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2370,7 +2355,6 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2425,7 +2409,6 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2476,7 +2459,6 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2536,7 +2518,6 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2597,7 +2578,6 @@ mod tests {
         let settings = Settings::utc();
         let mut state = State {
             history_count: results_len as i64,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2976,7 +2956,6 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
