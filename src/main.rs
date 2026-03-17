@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -39,7 +40,7 @@ fn default_history_file() -> Option<PathBuf> {
         \x20 hostname:\"cwd\" pid YYYY-MM-DDTHH:MM:SS+ZZZZ command\n\
         \x20 ##EXIT## hostname pid=N $?=N t_ms=N\n\
         \n\
-        The selected command is printed to stdout on exit:\n\
+        The selected command is printed to stdout or stderr depending on context:\n\
         \n\
         \x20 cmd=$(atuin-fullhistory) && eval \"$cmd\""
 )]
@@ -126,7 +127,15 @@ async fn main() -> Result<()> {
     let result =
         tui::interactive::history(&[], &settings, db, &app_theme, rx, context).await?;
     if !result.is_empty() {
-        println!("{result}");
+        // Match atuin's fd-swap shell integration pattern (3>&1 1>&2 2>&3):
+        //   stdout not a terminal → direct capture via $(), use println
+        //   stderr not a terminal → it's the capture pipe after the swap, use eprintln
+        //   otherwise → stderr is a real terminal, use eprintln
+        if !std::io::stdout().is_terminal() {
+            println!("{result}");
+        } else {
+            eprintln!("{result}");
+        }
     }
 
     Ok(())
