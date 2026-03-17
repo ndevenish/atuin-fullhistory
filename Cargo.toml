@@ -1,43 +1,49 @@
 [package]
-name = "atuin-tui"
+name = "atuin-fullhistory"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "atuin-tui"
+name = "atuin-fullhistory"
 path = "src/main.rs"
 
 [features]
 clipboard = []
 
 [dependencies]
-async-trait   = "0.1"
-clap          = { version = "4", features = ["derive"] }
-config        = { version = "0.15", default-features = false, features = ["toml"] }
-crossterm     = { version = "0.29", features = ["serde"] }
-directories   = "6"
-eyre          = "0.6"
-futures-util  = "0.3"
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+config = { version = "0.15", default-features = false, features = ["toml"] }
+crossterm = { version = "0.29", features = ["serde"] }
+directories = "6"
+eyre = "0.6"
+futures-util = "0.3"
 fuzzy-matcher = "0.3"
-humantime     = "2.1"
-interim       = { version = "0.2", features = ["time_0_3"] }
-itertools     = "0.14"
-log           = "0.4"
-norm          = { version = "0.1.1", features = ["fzf-v2"] }
-palette       = { version = "0.7", features = ["serializing"] }
-ratatui       = "0.30"
-regex         = "1"
-semver        = "1"
-serde         = { version = "1", features = ["derive"] }
-serde_json    = "1"
-serde_regex   = "1.1"
-serde_with    = "3"
-shellexpand   = "3"
-strum         = { version = "0.27", features = ["strum_macros"] }
-strum_macros  = "0.27"
-time          = { version = "0.3", features = ["serde-human-readable", "macros", "local-offset", "formatting", "parsing"] }
-tokio         = { version = "1", features = ["full"] }
-tracing       = "0.1"
+humantime = "2.1"
+interim = { version = "0.2", features = ["time_0_3"] }
+itertools = "0.14"
+log = "0.4"
+norm = { version = "0.1.1", features = ["fzf-v2"] }
+palette = { version = "0.7", features = ["serializing"] }
+ratatui = "0.30"
+regex = "1"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_regex = "1.1"
+serde_with = "3"
+shellexpand = "3"
+strum = { version = "0.27", features = ["strum_macros"] }
+strum_macros = "0.27"
+time = { version = "0.3", features = [
+    "serde-human-readable",
+    "macros",
+    "local-offset",
+    "formatting",
+    "parsing",
+] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
 unicode-width = "0.2"
-uuid          = { version = "1", features = ["v4", "v7", "serde"] }
-whoami        = "2"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+whoami = "2"
