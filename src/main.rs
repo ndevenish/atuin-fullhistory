@@ -57,6 +57,10 @@ enum Cmd {
         #[arg(long)]
         git_root: Option<PathBuf>,
 
+        /// Marker that the invocation came from the shell up-key binding
+        #[arg(long = "shell-up-key-binding", hide = true)]
+        shell_up_key_binding: bool,
+
         /// Search query
         #[arg(allow_hyphen_values = true)]
         query: Vec<String>,
@@ -109,6 +113,7 @@ async fn main() -> Result<()> {
             hostname,
             cwd,
             git_root,
+            shell_up_key_binding,
             query,
         } => {
             if !interactive {
@@ -147,7 +152,8 @@ async fn main() -> Result<()> {
                 git_root,
             };
 
-            let settings = Settings::new().unwrap_or_default();
+            let mut settings = Settings::new().unwrap_or_default();
+            settings.shell_up_key_binding = shell_up_key_binding;
             let theme_name = settings.theme.name.clone();
             let mut theme_manager = ThemeManager::new(settings.theme.debug, None);
             let app_theme =
