@@ -62,6 +62,9 @@ enum Cmd {
         query: Vec<String>,
     },
 
+    /// Generate a UUID
+    Uuid,
+
     /// Print shell integration script
     Init {
         shell: Shell,
@@ -88,6 +91,10 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
+        Cmd::Uuid => {
+            println!("{}", uuid::Uuid::now_v7().as_simple());
+        }
+
         Cmd::Init { shell, disable_ctrl_r, disable_up_arrow } => {
             match shell {
                 Shell::Zsh => print!("{}", zsh_init(disable_ctrl_r, disable_up_arrow)),
